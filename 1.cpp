@@ -3,297 +3,423 @@
 #include <cstring>
 #include <tuple>
 
+int64_t abs64(int64_t value)
+{
+    if(value < 0)
+        return (value * (-1));
+    return value;
+}
 
 class BigInt {
-    //digits are stored in the reversed order
-    char *data = nullptr;
-    size_t size = 0;
-    mutable int sign = 1;
+    using digit = char;
+    using sign = int;
 
-    //special method for sub
-    std::tuple<char *, char *, int> consecrate_for_sub(const BigInt &other) const {
-        if (other.size > size) return std::make_tuple(other.data, data, sign * -1);
-        else if (other.size < size) return std::make_tuple(data, other.data, sign);
-        for (size_t i = size; i > 0; --i) {
-            if (data[i - 1] < other.data[i - 1]) return std::make_tuple(other.data, data, sign * -1);
-            else if (data[i - 1] > other.data[i - 1]) return std::make_tuple(data, other.data, sign);
-        }
-        return std::make_tuple(data, other.data, 0);
-    }
-
-    //special method for div
-    static int numb_cmp_div(const BigInt &first, const BigInt &second) {
-        if (first.size > second.size) return 1;
-        else if (first.size < second.size) return -1;
-        for (size_t i = first.size; i > 0; --i) {
-            if (first.data[i - 1] < second.data[i - 1]) return -1;
-            else if (first.data[i - 1] > second.data[i - 1]) return 1;
-        }
-        return 0;
-    }
+    char *data_ = nullptr;     // reversed data
+    size_t len_ = 0;
+    mutable int sgn_ = 1;   // true := 1, false := -1
 
 public:
-    BigInt() {
-        data = new char[2];
-        data[0] = '0';
-        data[1] = '\0';
-        size = 1;
+    BigInt() : data_((digit*) malloc(sizeof(digit) * 2)), len_(1)
+    {
+        data_[0] = '0';
+        data_[1] = '\0';
     }
 
-    BigInt(long int init) {
-        if (init < 0) {
-            sign = -1;
-            init *= -1;
+    BigInt(int64_t init)
+    {
+        int64_t tmp = abs64(init);
+        if (init < 0)
+        {
+            sgn_ = -1;
+            init = abs64(init);
         }
-        size_t length = 0;
-        long int tmp = init;
-        if (init == 0) length = 1;
-        for (length; tmp != 0; ++length) tmp /= 10;
-        data = new char[length + 1];
-        sprintf(data, "%li", init);
-        std::reverse(data, data + length);
-        data[length] = '\0';
-        size = length;
+
+        size_t count = 0;
+
+        if (init == 0)
+            count = 1;
+        for (count; tmp != 0; count++)
+            tmp /= 10;
+
+        data_ = (digit*) malloc(sizeof(digit) * count + 1);
+
+        sprintf(data_, "%lld", init);
+        std::reverse(data_, data_ + count);
+
+        data_[count] = '\0';
+        len_ = count;
     }
 
-    BigInt(const BigInt &other) {
-        data = new char[other.size + 1];
-        std::strcpy(data, other.data);
-        data[other.size] = '\0';
-        size = other.size;
-        sign = other.sign;
+    ~BigInt()
+    {
+        free(data_);
     }
 
-    BigInt(BigInt &&movable) noexcept {
-        data = movable.data;
-        size = movable.size;
-        sign = movable.sign;
-        movable.data = nullptr;
+    BigInt(const BigInt &other) //  copy constructor
+    {
+        data_ = (digit*) malloc(sizeof(digit) * other.len_ + 1);
+        std::strcpy(data_, other.data_);
+
+        data_[other.len_] = '\0';
+        len_ = other.len_;
+        sgn_ = other.sgn_;
     }
 
-    BigInt &operator=(long int init) {
-        delete[] data;
-        if (init < 0) {
-            sign = -1;
-            init *= -1;
+    BigInt &operator=(const BigInt &copied)  //  copy operator
+    {
+        if (this == &copied) return *this;
+        delete[] data_;
+        data_ = new char[copied.len_ + 1];
+        std::strcpy(data_, copied.data_);
+        len_ = copied.len_;
+        sgn_ = copied.sgn_;
+    }
+
+    //////////////////////////////////////////////////  сравнение
+
+    bool operator==(const BigInt &other) const
+    {
+        if (sgn_ != other.sgn_)
+            return false;
+
+        for (size_t i = 0; i < len_; i++) {
+            if (data_[i] != other.data_[i])
+                return false;
         }
-        size_t length = 0;
-        long int tmp = init;
-        for (length; tmp != 0; ++length) tmp /= 10;
-        data = new char[length + 1];
-        sprintf(data, "%li", init);
-        std::reverse(data, data + length);
-        data[length] = '\0';
-        size = length;
+        return true;
     }
 
-    BigInt &operator=(const BigInt &other) {
-        if (this == &other) return *this;
-        delete[] data;
-        data = new char[other.size + 1];
-        std::strcpy(data, other.data);
-        size = other.size;
-        sign = other.sign;
+    bool operator!=(const BigInt &other) const
+    {
+        return !(*this == other);
     }
 
-    BigInt &operator=(BigInt &&movable) noexcept {
-        if (data == movable.data) return *this;
-        delete[] data;
-        data = movable.data;
-        size = movable.size;
-        sign = movable.sign;
-        movable.data = nullptr;
-    }
+    bool operator<(const BigInt &other) const
+    {
+        if (len_ < other.len_)
+            return true;
+        if (len_ > other.len_)
+            return false;
 
-    friend std::ostream &operator<<(std::ostream &os, const BigInt &object);
+        if (sgn_ < other.sgn_)
+            return true;
+        else if (sgn_ > other.sgn_)
+            return false;
 
-    BigInt operator+(const BigInt &other) const {
-        if (sign * other.sign < 0) {
-            if (other.sign < 0) { ;
-                other.sign = 1;
-                auto tmp_res = *this - other;
-                other.sign = -1;
-                return tmp_res;
-            } else {
-                sign = 1;
-                auto tmp_res = other - *this;
-                sign = -1;
-                return tmp_res;
-            }
-        }
-        size_t fin_size = std::max(size, other.size);
-        size_t min_size = std::min(size, other.size);
-        auto tmp = new char[fin_size + 2];
-        int remind = 0;
-        for (size_t i = 0; i < fin_size; ++i) {
-            int term_1, term_2;
-            if (i < size) term_1 = data[i] - '0';
-            else term_1 = 0;
-            if (i < other.size) term_2 = other.data[i] - '0';
-            else term_2 = 0;
-            int sum = term_1 + term_2 + remind;
-            tmp[i] = char(sum % 10) + '0';
-            remind = sum / 10;
-        }
-        auto res = BigInt();
-        res.size = 0;
-        delete[] res.data;
+        if (*this == other)
+            return false;
 
-        if (remind > 0) {
-            tmp[fin_size] = char(remind) + '0';
-            tmp[fin_size + 1] = '\0';
-            res.size = fin_size + 1;
-        } else {
-            tmp[fin_size] = '\0';
-            res.size = fin_size;
-        }
-        res.data = tmp;
-        res.sign = sign;
-        return res;
-    }
+        if (sgn_ < 0)
+        {
+            sgn_ = 1;
+            other.sgn_ = 1;
 
-    BigInt operator-(const BigInt &other) const {
-        if (sign * other.sign < 0) {
-            if (other.sign < 0) {
-                other.sign = 1;
-                auto tmp_res = *this + other;
-                other.sign = -1;
-                return tmp_res;
-            } else if (sign < 0) {
-                other.sign = -1;
-                auto tmp_res = *this + other;
-                other.sign = 1;
-                return tmp_res;
-            }
-        }
-        char *first_numb = nullptr;
-        char *second_numb = nullptr;
-        int res_sign = 0;
+            bool res = *this > other;
 
-        std::tie(first_numb, second_numb, res_sign) = this->consecrate_for_sub(other);
-        size_t second_size = std::min(size, other.size);
-        size_t fin_size = std::max(size, other.size);
+            sgn_ = -1;
+            other.sgn_ = -1;
 
-        auto res_data = new char[fin_size + 1];
-        auto res = BigInt();
-        res.size = 0;
-        delete[] res.data;
-
-        if (res_sign == 0) {
-            res_data[0] = '0';
-            res_data[1] = '\0';
-            res.data = res_data;
-            res.sign = 1;
-            res.size = 1;
             return res;
         }
 
-        int remind = 0;
-        for (size_t i = 0; i < fin_size; ++i) {
-            int sub;
-            if (i < second_size) sub = second_numb[i] - '0';
-            else sub = 0;
-            int dif = first_numb[i] - '0' - sub;
-            if (dif < 0) {
-                if (remind == 0) remind = 10;
-                else remind = 9;
-                dif += remind;
-            } else if (dif > 0 && remind > 0) {
-                dif -= 1;
-                remind = 0;
-            } else if (remind != 0) {
-                remind = 9;
-                dif += remind;
-            }
-            res_data[i] = char(dif + '0');
+        for (size_t i = len_; i > 0; i--)
+        {
+            if (data_[i - 1] > other.data_[i - 1])
+                return false;
+            else if (data_[i - 1] < other.data_[i - 1])
+                return true;
         }
-        size_t last_sig_char = fin_size - 1;
-        for (last_sig_char; res_data[last_sig_char] == '0' && last_sig_char > 0; --last_sig_char);
-        res_data[last_sig_char + 1] = '\0';
-        res.data = res_data;
-        res.sign = res_sign;
-        res.size = last_sig_char + 1;
+        return false;
+    }
+
+    bool operator<=(const BigInt& other) const
+    {
+        return (*this < other || *this == other);
+    }
+
+    bool operator>(const BigInt& other) const
+    {
+        return !(*this <= other);
+    }
+
+    bool operator>=(const BigInt& other) const
+    {
+        return !(*this < other);
+    }
+
+    /////////////////////////////////////////////////   arithmetic
+
+    BigInt operator+(const BigInt &other) const
+    {
+        if (sgn_ * other.sgn_ < 0)
+        {
+            if (other.sgn_ < 0)
+            {
+                other.sgn_ = 1;
+                auto tmp_res = *this - other;
+                other.sgn_ = -1;
+
+                return tmp_res;
+            } else
+            {
+                sgn_ = 1;
+                auto tmp_res = other - *this;
+                sgn_ = -1;
+
+                return tmp_res;
+            }
+        }
+
+        size_t end_len_ = std::max(len_, other.len_);
+        size_t min_len_ = std::min(len_, other.len_);
+
+        auto tmp = (digit*) malloc(sizeof(digit) * end_len_ + 2);
+        int passing_digit = 0;
+
+        for (size_t i = 0; i < end_len_; ++i)
+        {
+            int a, b;
+
+            if (i < len_)
+                a = data_[i] - '0';
+            else
+                a = 0;
+
+            if (i < other.len_)
+                b = other.data_[i] - '0';
+            else
+                b = 0;
+
+            int sum = a + b + passing_digit;
+            tmp[i] = char(sum % 10) + '0';
+            passing_digit = sum / 10;
+        }
+
+        auto res = BigInt();
+        res.len_ = 0;
+        free(res.data_);
+
+        if (passing_digit > 0)
+        {
+            tmp[end_len_] = char(passing_digit) + '0';
+            tmp[end_len_ + 1] = '\0';
+
+            res.len_ = end_len_ + 1;
+        } else
+        {
+            tmp[end_len_] = '\0';
+            res.len_ = end_len_;
+        }
+
+        res.data_ = tmp;
+        res.sgn_ = sgn_;
+
         return res;
     }
 
-    BigInt operator*(const BigInt &other) const {
-        size_t fin_size = size + other.size;
+    BigInt operator-(const BigInt &other) const
+    {
+        if (sgn_ * other.sgn_ < 0)
+        {
+            if (other.sgn_ < 0)
+            {
+                other.sgn_ = 1;
+                auto tmp_res = *this + other;
+                other.sgn_ = -1;
+
+                return tmp_res;
+            } else if (sgn_ < 0)
+            {
+                other.sgn_ = -1;
+                auto tmp_res = *this + other;
+                other.sgn_ = 1;
+
+                return tmp_res;
+            }
+        }
+
+        char *first_numb = nullptr;
+        char *second_numb = nullptr;
+        int res_sgn_ = 0;
+
+        std::tie(first_numb, second_numb, res_sgn_) = this->cons(other);
+        size_t second_len_ = std::min(len_, other.len_);
+        size_t end_len_ = std::max(len_, other.len_);
+
+        auto res_data_ = (digit*) malloc(sizeof(digit) * end_len_ + 1);
         auto res = BigInt();
-        res.size = 0;
-        delete[] res.data;
+        res.len_ = 0;
+        free (res.data_);
 
-        res.data = new char[fin_size + 2];
-        std::fill(res.data, res.data + fin_size + 1, '0');
-        res.data[fin_size + 1] = '\0';
-        res.size = fin_size + 1;
-        for (size_t i = 0; i < other.size; ++i) {
-            int curr_dig = other.data[i] - '0';
-            auto tmp = new char[size + 2 + i];
+        if (res_sgn_ == 0)
+        {
+            res_data_[0] = '0';
+            res_data_[1] = '\0';
+            res.data_ = res_data_;
+            res.sgn_ = 1;
+            res.len_ = 1;
+            return res;
+        }
+
+        int passing_digit = 0;
+        for (size_t i = 0; i < end_len_; ++i)
+        {
+            int sub;
+            if (i < second_len_)
+                sub = second_numb[i] - '0';
+            else
+                sub = 0;
+            int dif = first_numb[i] - '0' - sub;
+            if (dif < 0)
+            {
+                if (passing_digit == 0)
+                    passing_digit = 10;
+                else
+                    passing_digit = 9;
+                dif += passing_digit;
+            } else if(dif > 0 && passing_digit > 0)
+            {
+                dif -= 1;
+                passing_digit = 0;
+            } else if (passing_digit != 0)
+            {
+                passing_digit = 9;
+                dif += passing_digit;
+            }
+
+            res_data_[i] = char(dif + '0');
+        }
+
+        size_t last_sig_char = end_len_ - 1;
+
+        for (last_sig_char; res_data_[last_sig_char] == '0' && last_sig_char > 0; --last_sig_char);
+        res_data_[last_sig_char + 1] = '\0';
+        res.data_ = res_data_;
+        res.sgn_ = res_sgn_;
+        res.len_ = last_sig_char + 1;
+
+        return res;
+    }
+
+    std::tuple<char *, char *, int> cons(const BigInt &other) const
+    {
+        if (other.len_ > len_)
+            return std::make_tuple(other.data_, data_, sgn_ * -1);
+        else if (other.len_ < len_)
+            return std::make_tuple(data_, other.data_, sgn_);
+        for (size_t i = len_; i > 0; --i)
+        {
+            if (data_[i - 1] < other.data_[i - 1])
+                return std::make_tuple(other.data_, data_, sgn_ * -1);
+            else if (data_[i - 1] > other.data_[i - 1])
+                return std::make_tuple(data_, other.data_, sgn_);
+        }
+        return std::make_tuple(data_, other.data_, 0);
+    }
+
+
+    BigInt operator-() const
+    {
+        if (data_[len_ - 1] == '0')
+            return BigInt(*this);
+
+        auto new_value = BigInt(*this);
+        new_value.sgn_ *= -1;
+        return new_value;
+    }
+
+    BigInt operator*(const BigInt &other) const
+    {
+        size_t end_len_ = len_ + other.len_;
+        auto res = BigInt();
+        res.len_ = 0;
+        free(res.data_);
+
+        res.data_ = (digit*) malloc(sizeof(digit) * end_len_ + 2);
+        std::fill(res.data_, res.data_ + end_len_ + 1, '0');
+        res.data_[end_len_ + 1] = '\0';
+        res.len_ = end_len_ + 1;
+
+        for (size_t i = 0; i < other.len_; ++i)
+        {
+            int curr_dig = other.data_[i] - '0';
+            auto tmp = new char[len_ + 2 + i];
             int remind = 0;
-            for (size_t q = 0; q < size + 1 + i; ++q) tmp[q] = '0';
+            for (size_t q = 0; q < len_ + 1 + i; ++q)
+                tmp[q] = '0';
 
-            for (size_t j = i; j < size + i; ++j) {
-                int mul = (data[j - i] - '0') * curr_dig + remind;
+            for (size_t j = i; j < len_ + i; ++j)
+            {
+                int mul = (data_[j - i] - '0') * curr_dig + remind;
                 auto tmp_dig = char(mul % 10 + '0');
                 remind = mul / 10;
                 tmp[j] = tmp_dig;
             }
-            if (remind > 0) {
-                tmp[size + i] = char(remind + '0');
-            }
+            if (remind > 0)
+                tmp[len_ + i] = char(remind + '0');
 
             auto tmp_obj = BigInt();
-            tmp_obj.size = 0;
-            delete[] tmp_obj.data;
-            tmp_obj.data = tmp;
-            tmp_obj.size = size + i + 1;
-            tmp_obj.data[tmp_obj.size] = '\0';
+            tmp_obj.len_ = 0;
+            free(tmp_obj.data_);
+            tmp_obj.data_ = tmp;
+            tmp_obj.len_ = len_ + i + 1;
+            tmp_obj.data_[tmp_obj.len_] = '\0';
             res = res + tmp_obj;
         }
-        for (res.size; res.data[res.size - 1] == '0' && res.size > 1; --res.size);
-        res.data[res.size] = '\0';
-        if (res.data[res.size - 1] == '0') res.sign = 1;
-        else res.sign = sign * other.sign;
+        for (res.len_; res.data_[res.len_ - 1] == '0' && res.len_ > 1; --res.len_);
+        res.data_[res.len_] = '\0';
+        if (res.data_[res.len_ - 1] == '0')
+            res.sgn_ = 1;
+        else
+            res.sgn_ = sgn_ * other.sgn_;
+
         return res;
     }
 
-    BigInt operator/(const BigInt &other) const {
+    BigInt operator/(const BigInt &other) const
+    {
 
-        if (size < other.size || other.data[other.size - 1] == '0') {
+        if (len_ < other.len_ || other.data_[other.len_ - 1] == '0')
             return BigInt(0);
-        }
 
-        int this_sign = sign;
-        int other_sign = other.sign;
-        sign = 1;
-        other.sign = 1;
-        if (*this < other) {
-            sign = this_sign;
-            other.sign = other_sign;
+        int this_sgn_ = sgn_;
+        int other_sgn_ = other.sgn_;
+        sgn_ = 1;
+        other.sgn_ = 1;
+
+        if (*this < other)
+        {
+            sgn_ = this_sgn_;
+            other.sgn_ = other_sgn_;
             return BigInt(0);
         }
 
         auto curr_divider = BigInt(0);
         auto res = BigInt();
-        res.size = 0;
-        delete[] res.data;
-        res.data = new char[size + 1];
+        res.len_ = 0;
+        free(res.data_);
+        res.data_ = new char[len_ + 1];
 
-        size_t curr_not_taken = size;
+        size_t curr_not_taken = len_;
         bool fin_flag = false;
         bool first_time = true;
-        while (true) {
+
+        while(true)
+        {
             int counter = 0;
-            while (numb_cmp_div(curr_divider, other) == -1) {
-                if (curr_not_taken == 0) {
+            while (num(curr_divider, other) == -1)
+            {
+                if (curr_not_taken == 0)
+                {
                     fin_flag = true;
                     break;
                 }
-                if (counter >= 1 && !first_time) {
-                    res.data[res.size] = '0';
-                    res.size++;
+                if (counter >= 1 && !first_time)
+                {
+                    res.data_[res.len_] = '0';
+                    res.len_++;
                 }
-                int curr_dig = data[curr_not_taken - 1] - '0';
+                int curr_dig = data_[curr_not_taken - 1] - '0';
                 curr_divider = curr_divider * 10;
                 curr_divider = curr_divider + curr_dig;
 
@@ -301,17 +427,20 @@ public:
                 counter++;
             }
             first_time = false;
-            if (fin_flag) {
-                if (counter > 0) {
-                    res.data[res.size] = '0';
-                    res.size++;
+            if (fin_flag)
+            {
+                if (counter > 0)
+                {
+                    res.data_[res.len_] = '0';
+                    res.len_++;
                 }
                 break;
             }
 
             auto curr_mul = BigInt(0);
             int curr_numb = 0;
-            while (numb_cmp_div(curr_divider, curr_mul) >= 0) {
+            while (num(curr_divider, curr_mul) >= 0)
+            {
                 curr_mul = curr_mul + other;
                 ++curr_numb;
             }
@@ -320,150 +449,48 @@ public:
 
             curr_divider = curr_divider - curr_mul;
 
-            res.data[res.size] = char(curr_numb + '0');
-            res.size++;
+            res.data_[res.len_] = char(curr_numb + '0');
+            res.len_++;
         }
-        std::reverse(res.data, res.data + res.size);
-        res.data[res.size] = '\0';
-        res.sign = other_sign * this_sign;
+        std::reverse(res.data_, res.data_ + res.len_);
+        res.data_[res.len_] = '\0';
+        res.sgn_ = other_sgn_ * this_sgn_;
 
-        other.sign = other_sign;
-        sign = this_sign;
+        other.sgn_ = other_sgn_;
+        sgn_ = this_sgn_;
 
         return res;
     }
 
-    BigInt& operator++() {
-        if (sign < 0) {
-            sign = 1;
-            --*this;
-            sign = -1;
+    static int num(const BigInt &first, const BigInt &second)
+    {
+        if (first.len_ > second.len_)
+            return 1;
+        else if (first.len_ < second.len_)
+            return -1;
+        for (size_t i = first.len_; i > 0; --i)
+        {
+            if (first.data_[i - 1] < second.data_[i - 1])
+                return -1;
+            else if (first.data_[i - 1] > second.data_[i - 1])
+                return 1;
         }
-        size_t pos = 0;
-        while (true) {
-            if (data[pos] == '9') {
-                data[pos] = '0';
-                pos++;
-            }
-            else {
-                data[pos] += 1;
-                break;
-            }
-        }
-        if (pos == size - 1 && data[pos] == '0') {
-            auto tmp = new char[size + 1];
-            std::strcpy(tmp, data);
-            tmp[size] = '1';
-            size++;
-            tmp[size] = '\0';
-            delete[] data;
-            data = tmp;
-        }
-        return *this;
+        return 0;
     }
 
-    BigInt& operator--() {
-        if (sign < 0) {
-            sign = 1;
-            ++*this;
-            sign = -1;
-        }
-        size_t pos = 0;
-        while (true) {
-            if (data[pos] == '0') {
-                data[pos] = '9';
-                pos++;
-            }
-            else {
-                data[pos] -= 1;
-                break;
-            }
-        }
-        if (pos == size - 1 && data[pos] == '0' && pos > 1) {
-            data[pos] = '\0';
-            size--;
-        }
-        return *this;
-    }
-
-    BigInt operator-() {
-        if (data[size - 1] == '0') return BigInt(*this);
-        auto tmp = BigInt(*this);
-        tmp.sign *= -1;
-        return tmp;
-    }
-
-    bool operator==(const BigInt &other) const {
-        if (size != other.size || sign != other.sign) return false;
-        for (size_t i = size; i > 0; --i) {
-            if (data[i - 1] != other.data[i - 1]) return false;
-        }
-        return true;
-    }
-
-    bool operator!=(const BigInt &other) const {
-        return !(*this == other);
-    }
-
-    bool operator<(const BigInt &other) const {
-        if (*this == other) return false;
-        if (sign < other.sign) return true;
-        else if (sign > other.sign) return false;
-        else if (size > other.size) return false;
-        else if (size < other.size) return true;
-        if (sign < 0) {
-            sign = 1;
-            other.sign = 1;
-            bool res = *this > other;
-            sign = -1;
-            other.sign = -1;
-            return res;
-        }
-        for (size_t i = size; i > 0; --i) {
-            if (data[i - 1] > other.data[i - 1]) return false;
-            else if (data[i - 1] < other.data[i - 1]) return true;
-        }
-        return false;
-    }
-
-    bool operator>(const BigInt &other) const {
-        if (*this == other) return false;
-        return !(*this < other);
-    }
-
-    bool operator>=(const BigInt &other) const {
-        if (*this == other) return true;
-        else return (*this > other);
-    }
-
-    bool operator<=(const BigInt &other) const {
-        if (*this == other) return true;
-        else return (*this < other);
-    }
-
-    bool operator==(long int other) const { return *this == BigInt(other); }
-
-    bool operator!=(long int other) const { return *this != BigInt(other); }
-
-    bool operator<(long int other) const { return *this < BigInt(other); }
-
-    bool operator>(long int other) const { return *this > BigInt(other); }
-
-    bool operator>=(long int other) const { return *this >= BigInt(other); }
-
-    bool operator<=(long int other) const { return *this <= BigInt(other); }
-
-    ~BigInt() {
-        delete[] data;
-    }
+    friend std::ostream& operator<<(std::ostream& out, const BigInt& value);
 };
 
-std::ostream &operator<<(std::ostream &os, const BigInt &object) {
-    auto buf = new char[object.size + 1];
-    std::reverse_copy(object.data, object.data + object.size, buf);
-    if (object.sign < 0) os << '-';
-    buf[object.size] = '\0';
-    os << buf;
-    delete[] buf;
-    return os;
+std::ostream& operator<<(std::ostream& out, const BigInt& value)
+{
+    auto buf = (char*) malloc(sizeof(char) * value.len_ + 1);
+    std::reverse_copy(value.data_, value.data_ + value.len_, buf);
+    if (value.sgn_ < 0)
+        out << '-';
+
+    buf[value.len_] = '\0';
+    out << buf;
+
+    free(buf);
+    return out;
 }
